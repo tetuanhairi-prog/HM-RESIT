@@ -9,6 +9,7 @@ interface DatabaseProps {
   onDelete: (id: string) => void;
   onBulkDelete: (ids: string[]) => void;
   onExportExcel: () => void;
+  onBulkExportPDF: (ids: string[]) => void;
   onShare: (id: string) => void;
   onPrint: (receipt: Receipt) => void;
 }
@@ -20,6 +21,7 @@ export default function Database({
   onDelete,
   onBulkDelete,
   onExportExcel,
+  onBulkExportPDF,
   onShare,
   onPrint
 }: DatabaseProps) {
@@ -191,12 +193,24 @@ export default function Database({
           Pilih Semua
         </label>
         {selectedIds.size > 0 && (
-          <button 
-            onClick={handleBulkDelete}
-            className="bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-          >
-            Padam Terpilih ({selectedIds.size})
-          </button>
+          <>
+            <button 
+              onClick={handleBulkDelete}
+              className="bg-white dark:bg-slate-800 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            >
+              Padam Terpilih ({selectedIds.size})
+            </button>
+            <button 
+              onClick={() => {
+                onBulkExportPDF(Array.from(selectedIds));
+                // Optional: clear selection after clicking export
+                // setSelectedIds(new Set());
+              }}
+              className="bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-900/50 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            >
+              📄 Export PDF ({selectedIds.size})
+            </button>
+          </>
         )}
         <button 
           onClick={onExportExcel}

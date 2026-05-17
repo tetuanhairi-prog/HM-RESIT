@@ -27,6 +27,9 @@ export default function App() {
   const receiptRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [bulkPrintReceipts, setBulkPrintReceipts] = useState<Receipt[]>([]);
+  const bulkPrintContainerRef = useRef<HTMLDivElement>(null);
+
   // Initialize
   useEffect(() => {
     // Load Dark Mode
@@ -87,16 +90,34 @@ export default function App() {
     }
   };
 
-  const generateReceiptNumber = () => {
-    const lastNum = parseInt(localStorage.getItem(LAST_RECEIPT_KEY) || '0', 10);
-    const nextNum = lastNum + 1;
+  const [isEditing, setIsEditing] = useState(false);
+
+  const generateReceiptNumber = (currentReceipts?: Receipt[]) => {
+    const list = currentReceipts || JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     const year = new Date().getFullYear();
-    const receiptNo = `HMA-${year}-${String(nextNum).padStart(4, '0')}`;
-    localStorage.setItem(LAST_RECEIPT_KEY, String(nextNum));
-    return receiptNo;
+    const prefix = `HMA-${year}-`;
+    
+    let maxNum = 0;
+    for (const r of list) {
+      if (r.id?.startsWith(prefix)) {
+        const numPart = r.id.replace(prefix, '');
+        const num = parseInt(numPart, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+    
+    // Check against LAST_RECEIPT_KEY to avoid reusing numbers from deleted receipts
+    const lastNumFromStorage = parseInt(localStorage.getItem(LAST_RECEIPT_KEY) || '0', 10);
+    maxNum = Math.max(maxNum, lastNumFromStorage);
+    
+    const nextNum = maxNum + 1;
+    return `${prefix}${String(nextNum).padStart(4, '0')}`;
   };
 
   const resetForm = () => {
+    setIsEditing(false);
     setFormData({
       id: generateReceiptNumber(),
       documentType: 'RESIT',
@@ -120,20 +141,41 @@ export default function App() {
       return;
     }
 
+    // Always fetch latest from localStorage to prevent concurrent overwrite
+    const savedReceipts: Receipt[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    
+    let finalId = formData.id;
+    if (!isEditing) {
+      // Regenerate ID right before saving to guarantee uniqueness against latest data
+      finalId = generateReceiptNumber(savedReceipts);
+      
+      // Update the running counter
+      const newNum = parseInt((finalId as string).split('-').pop() || '0', 10);
+      localStorage.setItem(LAST_RECEIPT_KEY, String(Math.max(newNum, parseInt(localStorage.getItem(LAST_RECEIPT_KEY) || '0', 10))));
+    }
+
     const newReceipt = {
       ...formData,
+      id: finalId,
       timestamp: new Date().toISOString()
     } as Receipt;
 
-    setReceipts(prev => {
-      const existing = prev.findIndex(r => r.id === newReceipt.id);
-      if (existing >= 0) {
-        const updated = [...prev];
-        updated[existing] = newReceipt;
-        return updated;
-      }
-      return [newReceipt, ...prev];
-    });
+    let updatedReceipts;
+    const existing = savedReceipts.findIndex(r => r.id === newReceipt.id);
+    
+    if (existing >= 0 && isEditing) {
+      updatedReceipts = [...savedReceipts];
+      updatedReceipts[existing] = newReceipt;
+    } else {
+      updatedReceipts = [newReceipt, ...savedReceipts.filter(r => r.id !== newReceipt.id)];
+    }
+
+    setReceipts(updatedReceipts);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedReceipts));
+    
+    // Update formData id so the UI reflects the potentially new ID, but stay in edit mode so double clicks don't create duplicates
+    setFormData(prev => ({ ...prev, id: finalId }));
+    setIsEditing(true);
 
     // Print after save
     setTimeout(() => {
@@ -154,15 +196,37 @@ export default function App() {
     html2pdf().set(opt).from(element).save();
   };
 
+  useEffect(() => {
+    if (bulkPrintReceipts.length > 0 && bulkPrintContainerRef.current) {
+      setTimeout(() => {
+        const element = bulkPrintContainerRef.current;
+        if (!element) return;
+        const opt = {
+          margin: printConfig.margin,
+          filename: `HMA_Export_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
+          jsPDF: { unit: 'cm', format: printConfig.pageSize.toLowerCase(), orientation: printConfig.orientation }
+        };
+        html2pdf().set(opt).from(element).save().then(() => {
+          setBulkPrintReceipts([]);
+        });
+      }, 500);
+    }
+  }, [bulkPrintReceipts, printConfig]);
+
   const handleEdit = (receipt: Receipt) => {
+    setIsEditing(true);
     setFormData(receipt);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDuplicate = (receipt: Receipt) => {
+    setIsEditing(false);
+    const newId = generateReceiptNumber();
     setFormData({
       ...receipt,
-      id: generateReceiptNumber(),
+      id: newId,
       tarikh: format(new Date(), 'yyyy-MM-dd'),
       timestamp: new Date().toISOString()
     });
@@ -189,6 +253,11 @@ export default function App() {
 
   const handleBulkDelete = (ids: string[]) => {
     setReceipts(prev => prev.filter(r => !ids.includes(r.id)));
+  };
+
+  const handleBulkExportPDF = (ids: string[]) => {
+    const selected = receipts.filter(r => ids.includes(r.id));
+    setBulkPrintReceipts(selected);
   };
 
   const handleBackup = () => {
@@ -382,10 +451,23 @@ export default function App() {
             onDelete={handleDelete}
             onBulkDelete={handleBulkDelete}
             onExportExcel={handleExportExcel}
+            onBulkExportPDF={handleBulkExportPDF}
             onShare={handleShare}
             onPrint={handlePrint}
           />
         </div>
+
+        {bulkPrintReceipts.length > 0 && (
+          <div className="absolute left-[-9999px] top-0 w-[800px] bg-white text-black">
+            <div ref={bulkPrintContainerRef}>
+              {bulkPrintReceipts.map((receipt, index) => (
+                <div key={receipt.id} style={{ pageBreakAfter: index < bulkPrintReceipts.length - 1 ? 'always' : 'auto', breakAfter: index < bulkPrintReceipts.length - 1 ? 'page' : 'auto' }}>
+                  <ReceiptPreview data={receipt} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
       </div>
 
