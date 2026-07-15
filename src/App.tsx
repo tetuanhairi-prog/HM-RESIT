@@ -5,6 +5,7 @@ import { Receipt } from './types';
 import ReceiptForm from './components/ReceiptForm';
 import ReceiptPreview from './components/ReceiptPreview';
 import Database from './components/Database';
+import SimpleReceiptGenerator from './components/SimpleReceiptGenerator';
 
 const STORAGE_KEY = 'hma_receipts_v2';
 const DRAFT_KEY = 'hma_form_draft';
@@ -12,6 +13,7 @@ const LAST_RECEIPT_KEY = 'hma_last_receipt';
 const DARK_MODE_KEY = 'hma_dark_mode';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'advanced' | 'simple'>('advanced');
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [formData, setFormData] = useState<Partial<Receipt>>({});
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -29,6 +31,8 @@ export default function App() {
 
   const [bulkPrintReceipts, setBulkPrintReceipts] = useState<Receipt[]>([]);
   const bulkPrintContainerRef = useRef<HTMLDivElement>(null);
+
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Initialize
   useEffect(() => {
@@ -65,6 +69,16 @@ export default function App() {
         resetForm();
       }
     }
+
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
 
   // Auto-save draft
@@ -325,17 +339,22 @@ export default function App() {
   const handleFetchAPI = async () => {
     setIsFetchingAPI(true);
     try {
-      // Simulate an API call
       await new Promise(resolve => setTimeout(resolve, 1500));
-      // In a real application, you would fetch the data from your backend
-      // const response = await fetch('/api/receipts');
-      // const data = await response.json();
-      // setReceipts(data);
       alert('Data berjaya diselaraskan dengan API (Simulasi).');
     } catch (error) {
       alert('Gagal mengambil data dari API.');
     } finally {
       setIsFetchingAPI(false);
+    }
+  };
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
     }
   };
 
@@ -370,6 +389,14 @@ export default function App() {
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-white m-0">Sistem Resit HMA</h1>
           </div>
           <div className="flex flex-wrap gap-2">
+            {deferredPrompt && (
+              <button 
+                onClick={handleInstallClick}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2"
+              >
+                📱 Install App
+              </button>
+            )}
             <button 
               onClick={handleFetchAPI}
               disabled={isFetchingAPI}
@@ -405,57 +432,82 @@ export default function App() {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
-            <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Total Resit</h4>
-            <p className="text-3xl font-light text-slate-900 dark:text-white">{totalReceipts}</p>
-          </div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
-            <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Total Bayaran</h4>
-            <p className="text-3xl font-light text-slate-900 dark:text-white">RM {formatCurrency(totalAmount)}</p>
-          </div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
-            <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Total Baki</h4>
-            <p className="text-3xl font-light text-slate-900 dark:text-white">RM {formatCurrency(totalBalance)}</p>
-          </div>
-          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
-            <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Pelanggan</h4>
-            <p className="text-3xl font-light text-slate-900 dark:text-white">{uniqueCustomers}</p>
-          </div>
+        {/* Tabs */}
+        <div className="flex space-x-4 border-b border-slate-200 dark:border-slate-700 mb-6 print:hidden">
+          <button
+            onClick={() => setActiveTab('advanced')}
+            className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'advanced' ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+          >
+            Resit Lengkap (Jadual & Butiran)
+          </button>
+          <button
+            onClick={() => setActiveTab('simple')}
+            className={`px-4 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'simple' ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+          >
+            Resit Ringkas (Manual)
+          </button>
         </div>
 
-        {/* Main Content */}
-        <div className="flex flex-col lg:flex-row gap-6">
-          <div className="print:hidden flex-1">
-            <ReceiptForm 
-              formData={formData}
-              setFormData={setFormData}
-              onSave={handleSave}
-              onPreview={() => setShowPreviewModal(true)}
-              onExportPDF={handleExportPDF}
-              onReset={resetForm}
-            />
-          </div>
-          <div className="flex-1 print:w-full print:m-0 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden print:border-none print:shadow-none print:rounded-none">
-            <ReceiptPreview ref={receiptRef} data={formData} />
-          </div>
-        </div>
+        {activeTab === 'advanced' ? (
+          <>
+            {/* Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 print:hidden">
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
+                <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Total Resit</h4>
+                <p className="text-3xl font-light text-slate-900 dark:text-white">{totalReceipts}</p>
+              </div>
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
+                <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Total Bayaran</h4>
+                <p className="text-3xl font-light text-slate-900 dark:text-white">RM {formatCurrency(totalAmount)}</p>
+              </div>
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
+                <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Total Baki</h4>
+                <p className="text-3xl font-light text-slate-900 dark:text-white">RM {formatCurrency(totalBalance)}</p>
+              </div>
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm flex flex-col justify-center">
+                <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Pelanggan</h4>
+                <p className="text-3xl font-light text-slate-900 dark:text-white">{uniqueCustomers}</p>
+              </div>
+            </div>
 
-        {/* Database */}
-        <div className="print:hidden">
-          <Database 
-            receipts={receipts}
-            onEdit={handleEdit}
-            onDuplicate={handleDuplicate}
-            onDelete={handleDelete}
-            onBulkDelete={handleBulkDelete}
-            onExportExcel={handleExportExcel}
-            onBulkExportPDF={handleBulkExportPDF}
-            onShare={handleShare}
-            onPrint={handlePrint}
-          />
-        </div>
+            {/* Main Content */}
+            <div className="flex flex-col lg:flex-row gap-6">
+              <div className="print:hidden flex-1">
+                <ReceiptForm 
+                  receipts={receipts}
+                  formData={formData}
+                  setFormData={setFormData}
+                  onSave={handleSave}
+                  onPreview={() => setShowPreviewModal(true)}
+                  onExportPDF={handleExportPDF}
+                  onReset={resetForm}
+                />
+              </div>
+              <div className="flex-1 print:w-full print:m-0 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-x-auto print:border-none print:shadow-none print:rounded-none">
+                <div className="min-w-[600px] print:min-w-0">
+                  <ReceiptPreview ref={receiptRef} data={formData} />
+                </div>
+              </div>
+            </div>
+
+            {/* Database */}
+            <div className="print:hidden">
+              <Database 
+                receipts={receipts}
+                onEdit={handleEdit}
+                onDuplicate={handleDuplicate}
+                onDelete={handleDelete}
+                onBulkDelete={handleBulkDelete}
+                onExportExcel={handleExportExcel}
+                onBulkExportPDF={handleBulkExportPDF}
+                onShare={handleShare}
+                onPrint={handlePrint}
+              />
+            </div>
+          </>
+        ) : (
+          <SimpleReceiptGenerator />
+        )}
 
         {bulkPrintReceipts.length > 0 && (
           <div className="absolute left-[-9999px] top-0 w-[800px] bg-white text-black">
@@ -516,9 +568,11 @@ export default function App() {
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto bg-slate-100 dark:bg-slate-900 flex justify-center">
-              <div className="max-w-2xl w-full bg-white rounded-lg shadow-md overflow-hidden">
-                <ReceiptPreview data={formData} />
+            <div className="p-6 overflow-auto bg-slate-100 dark:bg-slate-900 flex justify-center">
+              <div className="max-w-2xl w-full bg-white rounded-lg shadow-md overflow-x-auto">
+                <div className="min-w-[600px]">
+                  <ReceiptPreview data={formData} />
+                </div>
               </div>
             </div>
             <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex gap-4 justify-end">

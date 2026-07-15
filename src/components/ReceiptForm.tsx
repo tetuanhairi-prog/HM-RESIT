@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Receipt } from '../types';
 
 interface ReceiptFormProps {
+  receipts?: Receipt[];
   formData: Partial<Receipt>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Receipt>>>;
   onSave: () => void;
@@ -11,6 +12,7 @@ interface ReceiptFormProps {
 }
 
 export default function ReceiptForm({
+  receipts = [],
   formData,
   setFormData,
   onSave,
@@ -18,6 +20,54 @@ export default function ReceiptForm({
   onExportPDF,
   onReset
 }: ReceiptFormProps) {
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState<{nama: string, alamat: string}[]>([]);
+  const autocompleteRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    handleChange(e);
+    
+    if (value.trim().length > 0 && receipts.length > 0) {
+      // Find unique customers that match the input
+      const matched = receipts
+        .filter(r => r.nama?.toLowerCase().includes(value.toLowerCase()))
+        .reduce((acc, current) => {
+          const x = acc.find(item => item.nama === current.nama);
+          if (!x) {
+            return acc.concat([{ nama: current.nama, alamat: current.alamat || '' }]);
+          } else {
+            return acc;
+          }
+        }, [] as {nama: string, alamat: string}[])
+        .slice(0, 5); // limit to 5 suggestions
+        
+      setSuggestions(matched);
+      setShowSuggestions(matched.length > 0);
+    } else {
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSuggestionClick = (suggestion: {nama: string, alamat: string}) => {
+    setFormData(prev => ({
+      ...prev,
+      nama: suggestion.nama,
+      alamat: suggestion.alamat
+    }));
+    setShowSuggestions(false);
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -138,16 +188,38 @@ export default function ReceiptForm({
           </div>
         </div>
 
-        <div>
+        <div className="relative" ref={autocompleteRef}>
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Nama Pelanggan / Syarikat:</label>
           <input 
             type="text" 
             name="nama"
             value={formData.nama || ''}
-            onChange={handleChange}
+            onChange={handleNameChange}
+            onFocus={() => {
+              if (formData.nama && suggestions.length > 0) {
+                setShowSuggestions(true);
+              }
+            }}
+            autoComplete="off"
             className="w-full p-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-shadow"
             required 
           />
+          {showSuggestions && (
+            <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-auto">
+              {suggestions.map((suggestion, index) => (
+                <li 
+                  key={index}
+                  onClick={() => handleSuggestionClick(suggestion)}
+                  className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 last:border-0"
+                >
+                  <div className="font-medium text-slate-900 dark:text-slate-100">{suggestion.nama}</div>
+                  {suggestion.alamat && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{suggestion.alamat}</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div>
