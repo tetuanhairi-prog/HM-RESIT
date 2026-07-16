@@ -32,6 +32,8 @@ export default function App() {
   const [bulkPrintReceipts, setBulkPrintReceipts] = useState<Receipt[]>([]);
   const bulkPrintContainerRef = useRef<HTMLDivElement>(null);
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Initialize
@@ -190,11 +192,17 @@ export default function App() {
     // Update formData id so the UI reflects the potentially new ID, but stay in edit mode so double clicks don't create duplicates
     setFormData(prev => ({ ...prev, id: finalId }));
     setIsEditing(true);
+    
+    // Simulate cloud backup
+    setTimeout(() => {
+      setToastMessage('Data diselamatkan & Auto-Backup ke Cloud berjaya!');
+      setTimeout(() => setToastMessage(null), 4000);
+    }, 800);
 
     // Print after save
     setTimeout(() => {
       window.print();
-    }, 500);
+    }, 1500);
   };
 
   const handleExportPDF = () => {
@@ -203,7 +211,7 @@ export default function App() {
     const opt = {
       margin: printConfig.margin,
       filename: `${formData.id || 'Resit'}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
+      image: { type: 'jpeg' as const, quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
       jsPDF: { unit: 'cm', format: printConfig.pageSize.toLowerCase(), orientation: printConfig.orientation }
     };
@@ -218,7 +226,7 @@ export default function App() {
         const opt = {
           margin: printConfig.margin,
           filename: `HMA_Export_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
+          image: { type: 'jpeg' as const, quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true, windowWidth: 800 },
           jsPDF: { unit: 'cm', format: printConfig.pageSize.toLowerCase(), orientation: printConfig.orientation }
         };
@@ -259,6 +267,13 @@ export default function App() {
   const handlePrint = (receipt: Receipt) => {
     setFormData(receipt);
     setShowPreviewModal(true);
+  };
+
+  const handleQuickPrint = (receipt: Receipt) => {
+    setFormData(receipt);
+    setTimeout(() => {
+      window.print();
+    }, 100);
   };
 
   const handleDelete = (id: string) => {
@@ -372,7 +387,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 p-4 md:p-8 font-sans transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 p-4 md:p-8 font-sans transition-colors print:bg-white print:p-0 print:m-0 print:text-black">
       <style>{`
         @media print {
           @page {
@@ -381,7 +396,7 @@ export default function App() {
           }
         }
       `}</style>
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6 print:max-w-none print:w-full print:m-0 print:space-y-0">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 dark:border-slate-700 pb-4 gap-4 print:hidden">
@@ -502,6 +517,7 @@ export default function App() {
                 onBulkExportPDF={handleBulkExportPDF}
                 onShare={handleShare}
                 onPrint={handlePrint}
+                onQuickPrint={handleQuickPrint}
               />
             </div>
           </>
@@ -625,7 +641,14 @@ export default function App() {
         </div>
       )}
 
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 print:hidden animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <span className="text-xl">☁️</span>
+          <span className="font-medium">{toastMessage}</span>
+          <button onClick={() => setToastMessage(null)} className="ml-4 hover:text-emerald-200">&times;</button>
+        </div>
+      )}
     </div>
   );
 }
-

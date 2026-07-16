@@ -161,7 +161,7 @@ export default function SimpleReceiptGenerator() {
   };
 
   return (
-    <div className="max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-8 items-start w-full relative">
+    <div className="max-w-[1400px] mx-auto flex flex-col lg:flex-row gap-8 items-start w-full relative print:block print:w-full print:max-w-none print:m-0 print:p-0">
       <style>{`
         @media print {
             body { background-color: white !important; }
@@ -331,8 +331,8 @@ export default function SimpleReceiptGenerator() {
       </div>
 
       {/* BAHAGIAN KANAN: PAPARAN RESIT */}
-      <div className="w-full lg:w-2/3 flex justify-center receipt-container lg:sticky lg:top-8 bg-transparent text-black overflow-x-auto" style={{ color: 'black' }}>
-        <div className="bg-white border-2 border-slate-300 w-full min-w-[600px] max-w-[800px] p-8 shadow-lg relative receipt-container min-h-[500px]">
+      <div className="w-full lg:w-2/3 flex justify-center receipt-container lg:sticky lg:top-8 bg-transparent text-black overflow-x-auto print:overflow-visible print:w-full print:block" style={{ color: 'black' }}>
+        <div className="bg-white border-2 border-slate-300 w-full min-w-[600px] max-w-[800px] p-8 shadow-lg relative receipt-container min-h-[500px] print:min-w-0 print:border-none print:shadow-none print:p-0">
           {/* Watermark */}
           <div className="watermark-bg">
             <div className="watermark-text text-black">
@@ -354,6 +354,11 @@ export default function SimpleReceiptGenerator() {
                 <div className="text-left font-bold space-y-1">
                   <h1 className="text-2xl tracking-widest border-b-4 border-slate-800 pb-1 inline-block">RESIT RASMI</h1>
                   <h2 className="text-lg">OFFICIAL RECEIPT</h2>
+                  <div className="text-xs font-normal mt-2 space-y-0.5 text-slate-800">
+                    <p>TETUAN HAIRI MUSTAFA & ASSOCIATES</p>
+                    <p>Lot 02, Bangunan Arked Mara, 09100 Baling Kedah</p>
+                    <p>Tel: 011-5653 1310 | Email: tetuanhairi@gmail.com</p>
+                  </div>
                 </div>
               </div>
 

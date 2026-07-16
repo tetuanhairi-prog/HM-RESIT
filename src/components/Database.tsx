@@ -12,6 +12,7 @@ interface DatabaseProps {
   onBulkExportPDF: (ids: string[]) => void;
   onShare: (id: string) => void;
   onPrint: (receipt: Receipt) => void;
+  onQuickPrint: (receipt: Receipt) => void;
 }
 
 export default function Database({
@@ -23,7 +24,8 @@ export default function Database({
   onExportExcel,
   onBulkExportPDF,
   onShare,
-  onPrint
+  onPrint,
+  onQuickPrint
 }: DatabaseProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
@@ -122,7 +124,7 @@ export default function Database({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-colors mt-6">
+    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 transition-colors mt-6 print:hidden">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 border-b border-slate-200 dark:border-slate-700 pb-4">
         <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white m-0">Senarai Rekod Dokumen</h3>
       </div>
@@ -292,9 +294,16 @@ export default function Database({
                           📋
                         </button>
                         <button 
+                          onClick={() => onQuickPrint(receipt)}
+                          className="p-1.5 text-slate-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-slate-700 rounded transition-colors"
+                          title="Cetak Pantas"
+                        >
+                          ⚡
+                        </button>
+                        <button 
                           onClick={() => onPrint(receipt)}
                           className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700 rounded transition-colors"
-                          title="Print"
+                          title="Print Preview"
                         >
                           🖨️
                         </button>
