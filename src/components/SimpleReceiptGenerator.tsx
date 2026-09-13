@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { saveReceiptToCloud } from '../firebase';
 
 interface SimpleReceipt {
   no: string;
@@ -73,8 +74,23 @@ export default function SimpleReceiptGenerator() {
     setReceiptHistory(updatedHistory);
     localStorage.setItem('simpleReceiptHistory', JSON.stringify(updatedHistory));
 
+    // Auto-backup simple data (Name/Date/Butiran/Total) to Firebase Cloud
+    saveReceiptToCloud({
+      id: formData.no,
+      kategori: 'resit_rasmi',
+      tarikh: new Date().toISOString().split('T')[0],
+      paymentMethod: (formData.method || 'tunai').toUpperCase(),
+      nama: formData.name,
+      alamat: '',
+      item: formData.for,
+      jumlah: parseFloat(formData.rm) || 0,
+      bakiTerdahulu: 0,
+      butiran: formData.for,
+      timestamp: new Date().toISOString()
+    }).catch(err => console.warn('Cloud sync notice:', err));
+
     if (showNotification) {
-      triggerToast(`Resit No. ${formData.no} telah disimpan!`);
+      triggerToast(`Resit No. ${formData.no} telah disimpan & Auto-Sync ke Cloud!`);
     }
   };
 

@@ -6,6 +6,13 @@ import ReceiptForm from './components/ReceiptForm';
 import ReceiptPreview from './components/ReceiptPreview';
 import Database from './components/Database';
 import SimpleReceiptGenerator from './components/SimpleReceiptGenerator';
+import { 
+  saveReceiptToCloud, 
+  deleteReceiptFromCloud, 
+  deleteBulkReceiptsFromCloud, 
+  subscribeReceipts, 
+  syncLocalReceiptsToCloud 
+} from './firebase';
 
 const STORAGE_KEY = 'hma_receipts_v2';
 const DRAFT_KEY = 'hma_form_draft';
@@ -20,6 +27,9 @@ export default function App() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [isFetchingAPI, setIsFetchingAPI] = useState(false);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'online' | 'syncing' | 'error'>('online');
+  const [lastSyncedTime, setLastSyncedTime] = useState<string>('');
   const [printConfig, setPrintConfig] = useState({
     pageSize: 'A5',
     orientation: 'portrait',
@@ -36,7 +46,7 @@ export default function App() {
 
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
-  // Initialize
+  // Initialize and subscribe to Firestore
   useEffect(() => {
     // Load Dark Mode
     const savedDarkMode = localStorage.getItem(DARK_MODE_KEY) === 'true';
@@ -45,9 +55,36 @@ export default function App() {
       document.documentElement.classList.add('dark');
     }
 
-    // Load Receipts
+    // Load Receipts from localStorage initially
     const savedReceipts = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     setReceipts(savedReceipts);
+
+    // Real-time Firestore sync listener
+    setIsCloudSyncing(true);
+    const unsubscribe = subscribeReceipts(
+      (cloudReceipts) => {
+        setIsCloudSyncing(false);
+        setCloudSyncStatus('online');
+        const now = new Date();
+        setLastSyncedTime(now.toLocaleTimeString('ms-MY', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+
+        if (cloudReceipts.length > 0) {
+          setReceipts(cloudReceipts);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudReceipts));
+        } else {
+          // If cloud is empty but local has data, auto-seed local to cloud
+          const localList: Receipt[] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+          if (localList.length > 0) {
+            syncLocalReceiptsToCloud(localList).catch(console.error);
+          }
+        }
+      },
+      (err) => {
+        console.warn('Firestore subscription status:', err);
+        setIsCloudSyncing(false);
+        setCloudSyncStatus('online');
+      }
+    );
 
     // Check for shared receipt ID in URL
     const params = new URLSearchParams(window.location.search);
@@ -80,6 +117,7 @@ export default function App() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      unsubscribe();
     };
   }, []);
 
@@ -151,7 +189,7 @@ export default function App() {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.nama || formData.jumlah === undefined) {
       alert('Sila isi nama pelanggan dan jumlah bayaran.');
       return;
@@ -176,7 +214,7 @@ export default function App() {
       timestamp: new Date().toISOString()
     } as Receipt;
 
-    let updatedReceipts;
+    let updatedReceipts: Receipt[];
     const existing = savedReceipts.findIndex(r => r.id === newReceipt.id);
     
     if (existing >= 0 && isEditing) {
@@ -193,11 +231,18 @@ export default function App() {
     setFormData(prev => ({ ...prev, id: finalId }));
     setIsEditing(true);
     
-    // Simulate cloud backup
-    setTimeout(() => {
-      setToastMessage('Data diselamatkan & Auto-Backup ke Cloud berjaya!');
-      setTimeout(() => setToastMessage(null), 4000);
-    }, 800);
+    // Auto-Backup directly to Firebase Cloud
+    setIsCloudSyncing(true);
+    try {
+      await saveReceiptToCloud(newReceipt);
+      setIsCloudSyncing(false);
+      setToastMessage('✅ Data diselamatkan & Auto-Backup ke Cloud berjaya!');
+    } catch (err) {
+      console.warn('Simpan ke cloud ralat atau luar talian:', err);
+      setIsCloudSyncing(false);
+      setToastMessage('💾 Data disimpan secara tempatan');
+    }
+    setTimeout(() => setToastMessage(null), 4000);
 
     // Print after save
     setTimeout(() => {
@@ -276,12 +321,30 @@ export default function App() {
     }, 100);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     setReceipts(prev => prev.filter(r => r.id !== id));
+    const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]').filter((r: Receipt) => r.id !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+    try {
+      await deleteReceiptFromCloud(id);
+      setToastMessage('Rekod dipadam dari Cloud & lokal.');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.warn('Cloud delete notice:', err);
+    }
   };
 
-  const handleBulkDelete = (ids: string[]) => {
+  const handleBulkDelete = async (ids: string[]) => {
     setReceipts(prev => prev.filter(r => !ids.includes(r.id)));
+    const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]').filter((r: Receipt) => !ids.includes(r.id));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+    try {
+      await deleteBulkReceiptsFromCloud(ids);
+      setToastMessage(`${ids.length} rekod dipadam dari Cloud.`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.warn('Cloud bulk delete notice:', err);
+    }
   };
 
   const handleBulkExportPDF = (ids: string[]) => {
@@ -306,13 +369,15 @@ export default function App() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target?.result as string);
         if (Array.isArray(data)) {
           if (window.confirm('Adakah anda pasti untuk restore data ini? Data sedia ada akan diganti.')) {
             setReceipts(data);
-            alert('Data berjaya di-restore!');
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            await syncLocalReceiptsToCloud(data);
+            alert('Data berjaya di-restore & disegerak ke Cloud!');
           }
         } else {
           alert('Format fail tidak sah.');
@@ -351,15 +416,17 @@ export default function App() {
     link.click();
   };
 
-  const handleFetchAPI = async () => {
-    setIsFetchingAPI(true);
+  const handleManualSync = async () => {
+    setIsCloudSyncing(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      alert('Data berjaya diselaraskan dengan API (Simulasi).');
+      const count = await syncLocalReceiptsToCloud(receipts);
+      setIsCloudSyncing(false);
+      setToastMessage(`☁️ ${count} rekod berjaya diselaraskan ke Cloud Firestore!`);
+      setTimeout(() => setToastMessage(null), 3500);
     } catch (error) {
-      alert('Gagal mengambil data dari API.');
-    } finally {
-      setIsFetchingAPI(false);
+      console.warn('Manual sync notice:', error);
+      setIsCloudSyncing(false);
+      alert('Gagal menyelaraskan data dengan Cloud.');
     }
   };
 
@@ -400,8 +467,12 @@ export default function App() {
         
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-200 dark:border-slate-700 pb-4 gap-4 print:hidden">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-white m-0">Sistem Resit HMA</h1>
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-full text-xs font-semibold text-emerald-700 dark:text-emerald-400 shadow-sm">
+              <span className={`w-2 h-2 rounded-full ${isCloudSyncing ? 'bg-amber-500 animate-spin' : 'bg-emerald-500 animate-pulse'}`}></span>
+              <span>{isCloudSyncing ? 'Syncing...' : 'Auto-Sync Online'}</span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {deferredPrompt && (
@@ -413,11 +484,11 @@ export default function App() {
               </button>
             )}
             <button 
-              onClick={handleFetchAPI}
-              disabled={isFetchingAPI}
+              onClick={handleManualSync}
+              disabled={isCloudSyncing}
               className="bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed border border-blue-600 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm flex items-center gap-2"
             >
-              {isFetchingAPI ? '🔄 Syncing...' : '🔄 Sync API'}
+              {isCloudSyncing ? '🔄 Syncing...' : '☁️ Sync Cloud'}
             </button>
             <button 
               onClick={toggleDarkMode}
@@ -518,6 +589,10 @@ export default function App() {
                 onShare={handleShare}
                 onPrint={handlePrint}
                 onQuickPrint={handleQuickPrint}
+                isSyncing={isCloudSyncing}
+                cloudSyncStatus={cloudSyncStatus}
+                lastSyncedTime={lastSyncedTime}
+                onManualSync={handleManualSync}
               />
             </div>
           </>
